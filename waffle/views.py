@@ -1,6 +1,6 @@
 from __future__ import unicode_literals
 
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.template import loader
 from django.views.decorators.cache import never_cache
 
@@ -15,8 +15,11 @@ def wafflejs(request):
     return HttpResponse(_generate_waffle_js(request),
                         content_type='application/x-javascript')
 
+@never_cache
+def flag_json(request):
+    return JsonResponse({v[0]: v[1] for v in _get_flag_values(request)})
 
-def _generate_waffle_js(request):
+def _get_flag_values(request):
     flags = cache.get(keyfmt(get_setting('ALL_FLAGS_CACHE_KEY')))
     if flags is None:
         flags = Flag.objects.values_list('name', flat=True)
@@ -25,17 +28,26 @@ def _generate_waffle_js(request):
     for f in flags:
         if flag_is_active(request, f):
             flag_values.append((f, True))
+    return flag_values
 
+def _get_switches():
     switches = cache.get(keyfmt(get_setting('ALL_SWITCHES_CACHE_KEY')))
     if switches is None:
         switches = Switch.objects.values_list('name', 'active')
         cache.add(keyfmt(get_setting('ALL_SWITCHES_CACHE_KEY')), switches)
+    return switches
 
+def _get_sample_values():
     samples = cache.get(keyfmt(get_setting('ALL_SAMPLES_CACHE_KEY')))
     if samples is None:
         samples = Sample.objects.values_list('name', flat=True)
         cache.add(keyfmt(get_setting('ALL_SAMPLES_CACHE_KEY')), samples)
-    sample_values = [(s, sample_is_active(s)) for s in samples]
+    return [(s, sample_is_active(s)) for s in samples]
+
+def _generate_waffle_js(request):
+    flag_values = _get_flag_values(request)
+    switches = _get_switches()
+    sample_values = _get_sample_values()
 
     return loader.render_to_string('waffle/waffle.js', {
         'flags': flag_values,
